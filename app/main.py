@@ -1,4 +1,4 @@
-from io import FileIO
+from io import FileIO, BytesIO
 import os
 import zlib
 import click
@@ -25,9 +25,13 @@ def init():
 @click.option("-w", is_flag=True, help="write the object into the object database")
 @click.argument("obj", type=click.File("rb"))
 def hash_object(w: bool, obj: FileIO):
+    print(_hash_object(w, obj, "blob"))
+
+
+def _hash_object(w, obj, typ):
     m = hashlib.sha1()
     content = obj.read()
-    blob = f"blob {len(content)}\0".encode("utf-8") + content
+    blob = f"{typ} {len(content)}\0".encode("utf-8") + content
     m.update(blob)
     p = m.hexdigest()
     if w:
@@ -37,7 +41,7 @@ def hash_object(w: bool, obj: FileIO):
             os.makedirs(folder)
         with open(path, "wb") as f:
             f.write(zlib.compress(blob))
-    print(p)
+    return p
 
 
 @git.command(name="cat-file")
@@ -78,6 +82,53 @@ def ls_tree(tree_ish: str, name_only: bool):
         for o in objects:
             if name_only:
                 print(o[1].decode("utf-8"))
+
+
+@git.command(name="write-tree")
+def write_tree():
+    print(_write_tree())
+
+
+def _write_tree(top=r".") -> str:
+    files_hash = []
+    for file in os.listdir(top):
+        if file == ".git":
+            continue
+
+        path = os.path.join(top, file)
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                files_hash.append(
+                    [
+                        "100644",
+                        os.path.relpath(path, start=top),
+                        int.to_bytes(
+                            int(_hash_object(True, f, "blob"), base=16),
+                            length=20,
+                            byteorder="big",
+                        ),
+                    ]
+                )
+        elif os.path.isdir(os.path.join(top, file)):
+            files_hash.append(
+                [
+                    "40000",
+                    os.path.relpath(path, start=top),
+                    int.to_bytes(
+                        int(
+                            _write_tree(path),
+                            base=16,
+                        ),
+                        length=20,
+                        byteorder="big",
+                    ),
+                ]
+            )
+    files_hash.sort(key=lambda x: x[1])
+    tree_blob = b"".join(
+        f"{mode} {name}\0".encode("utf-8") + hash for mode, name, hash in files_hash
+    )
+    return _hash_object(True, BytesIO(tree_blob), "tree")
 
 
 if __name__ == "__main__":
