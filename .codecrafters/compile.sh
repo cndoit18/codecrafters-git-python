@@ -9,3 +9,4 @@
 set -e # Exit on failure
 
 # (This file is empty since Python programs don't use a compile step)
+PYTHONPATH=$(dirname $0) exec python3 -m pip install -r requirements.txt
