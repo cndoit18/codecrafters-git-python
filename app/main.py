@@ -4,6 +4,9 @@ import zlib
 import click
 import hashlib
 import itertools
+from datetime import datetime
+import requests
+import re
 
 
 @click.group()
@@ -127,6 +130,92 @@ def _write_tree(top=r".") -> str:
         f"{mode} {name}\0".encode("utf-8") + hash for mode, name, hash in files_hash
     )
     return _hash_object(True, BytesIO(tree_blob), "tree")
+
+
+@git.command(name="commit-tree")
+@click.argument("tree_ish", type=str)
+@click.option("-p", type=str, help="id of a parent commit object")
+@click.option("-m", type=str, help="commit message")
+def commit_tree(tree_ish: str, p: str, m: str):
+    now = datetime.now().astimezone()
+    commit = f"tree {tree_ish} \n".encode("utf-8")
+    if p:
+        commit += f"parent {p} \n".encode("utf-8")
+    commit += f"author cndoit18 <cndoit18@outlook.com> {int(now.timestamp())} {now.strftime('%z')}\n".encode(
+        "utf-8"
+    )
+    commit += b"\n"
+    if m:
+        commit += m.encode("utf-8") + b"\n"
+    print(_hash_object(True, BytesIO(commit), "commit"))
+
+
+@git.command()
+@click.argument("url", type=str)
+def clone(url: str):
+    host = "github.com"
+    user = "cndoit18"
+    repo = "codecrafters-git-python"
+
+    resp = requests.get(
+        f"https://{host}/{user}/{repo}/info/refs?service=git-upload-pack",
+        headers={
+            "user-agent": "git/2.47.0",
+            "content-type": "application/x-git-upload-pack-request",
+            "git-protocol": "version=1",
+        },
+    )
+    if not re.match(r"^[0-9a-f]{4}#", resp.text):
+        click.echo("response format error")
+    smart = resp.text
+    cur = 0
+    offset = int(smart[cur : cur + 4], base=16)
+    # skip header
+    cur += offset
+
+    assert "0000" == smart[cur : cur + 4]
+    cur += 4
+
+    offset = int(smart[cur : cur + 4], base=16)
+    # skip version
+    cur += offset
+
+    offset = int(smart[cur : cur + 4], base=16)
+    # skip metadata
+    cur += offset
+
+    wants = []
+    while cur < len(smart):
+        offset = int(smart[cur : cur + 4], base=16)
+        if offset == 0:
+            break
+        sha, ref = smart[cur + 4 : cur + offset - 1].split(" ")
+        wants.append([sha, ref])
+        cur += offset
+
+    for sha, _ in wants:
+        data = f"0011command=fetch0001000fno-progress0032want {sha}\n0009done\n0000"
+        resp = requests.post(
+            f"https://{host}/{user}/{repo}/git-upload-pack",
+            headers={
+                "user-agent": "git/2.47.0",
+                "content-type": "application/x-git-upload-pack-request",
+                "git-protocol": "version=2",
+            },
+            data=data,
+        )
+        packfile = resp.content
+        cur = 0
+        offset = int(packfile[cur : cur + 4], base=16)
+
+        cur += offset
+        offset = int(packfile[cur : cur + 4], base=16)
+
+        cur += 5
+        assert packfile[cur : cur + 4] == "PACK".encode("utf-8")
+        cur += 4
+        # version
+        assert 2 == int.from_bytes(packfile[cur : cur + 4], "big")
 
 
 if __name__ == "__main__":
