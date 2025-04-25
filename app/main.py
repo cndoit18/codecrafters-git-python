@@ -4,6 +4,7 @@ import zlib
 import click
 import hashlib
 import itertools
+from datetime import datetime
 
 
 @click.group()
@@ -127,6 +128,24 @@ def _write_tree(top=r".") -> str:
         f"{mode} {name}\0".encode("utf-8") + hash for mode, name, hash in files_hash
     )
     return _hash_object(True, BytesIO(tree_blob), "tree")
+
+
+@git.command(name="commit-tree")
+@click.argument("tree_ish", type=str)
+@click.option("-p", type=str, help="id of a parent commit object")
+@click.option("-m", type=str, help="commit message")
+def commit_tree(tree_ish: str, p: str, m: str):
+    now = datetime.now().astimezone()
+    commit = f"tree {tree_ish} \n".encode("utf-8")
+    if p:
+        commit += f"parent {p} \n".encode("utf-8")
+    commit += f"author cndoit18 <cndoit18@outlook.com> {int(now.timestamp())} {now.strftime('%z')}\n".encode(
+        "utf-8"
+    )
+    commit += b"\n"
+    if m:
+        commit += m.encode("utf-8") + b"\n"
+    print(_hash_object(True, BytesIO(commit), "commit"))
 
 
 if __name__ == "__main__":
