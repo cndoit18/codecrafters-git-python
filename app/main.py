@@ -102,8 +102,7 @@ def _write_tree(top=r".") -> str:
                     [
                         "100644",
                         os.path.relpath(path, start=top),
-                        int.to_bytes(
-                            int(_hash_object(True, f, "blob"), base=16),
+                        int(_hash_object(True, f, "blob"), base=16).to_bytes(
                             length=20,
                             byteorder="big",
                         ),
@@ -114,11 +113,10 @@ def _write_tree(top=r".") -> str:
                 [
                     "40000",
                     os.path.relpath(path, start=top),
-                    int.to_bytes(
-                        int(
-                            _write_tree(path),
-                            base=16,
-                        ),
+                    int(
+                        _write_tree(path),
+                        base=16,
+                    ).to_bytes(
                         length=20,
                         byteorder="big",
                     ),
